@@ -16,12 +16,14 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.io.InputStream;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Created by b88maw on 12/12/2016.
  */
-@Path(value = "/bitbucket/jpod/services")
+@Path(value = "/push")
 public class BitbucketJpodServicesWebhook {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BitbucketJpodServicesWebhook.class);
@@ -35,19 +37,28 @@ public class BitbucketJpodServicesWebhook {
         JsonObject rootJsonObject = jsonReader.readObject();
         jsonReader.close();
 
-        LOGGER.debug(rootJsonObject.toString());
-
-        String branchName = "";
-        for (JsonObject refChanges : rootJsonObject.getJsonArray("refChanges").toArray(new JsonObject[]{})) {
-            branchName = refChanges.getString("refId"); // branch name
-        }
-
+        LOGGER.info(rootJsonObject.toString());
         JsonObject repository = rootJsonObject.getJsonObject("repository");
         JsonObject project = repository.getJsonObject("project");
 
         final String repositoryUrl = "ssh://mustache:7999/" + project.getString("key").toLowerCase() + "/" + repository.getString("name") + "." + repository.getString("scmId");
         LOGGER.info(repositoryUrl);
-        invokeBuild(repositoryUrl, branchName, buildUrl);
+
+        final Set<String> branches = new HashSet<>();
+        for (JsonObject refChanges : rootJsonObject.getJsonArray("refChanges").toArray(new JsonObject[]{})) {
+            final String branchName = refChanges.getString("refId"); // branch name
+            final String refChangesType = refChanges.getString("type"); // ADD/UPDATE/DELETE
+            if (!refChangesType.equalsIgnoreCase("DELETE")) {
+                branches.add(branchName);
+            } else {
+                LOGGER.info("Branch " + branchName + " was deleted with " + refChanges.getString("toHash"));
+                branches.remove(branchName);
+            }
+        }
+        for (String branchName : branches) {
+            invokeBuild(repositoryUrl, branchName, buildUrl);
+        }
+
         return Response.ok().build();
     }
 
@@ -58,10 +69,12 @@ public class BitbucketJpodServicesWebhook {
     private static final String CAUSE_PARAM = "cause";
 
     private void invokeBuild(final String repository, final String branchName, final String buildUrl) {
+        LOGGER.info("invokeBuild " + repository + " " + branchName + " " + buildUrl);
         Map<String, String> parameters = new HashMap<>();
         parameters.put(REPOSITORY_URL_PARAM, repository);
         parameters.put(BRANCH_SPECIFIER_PARAM, branchName);
         parameters.put(TOKEN_PARAM, "1031980531");
+        parameters.put(CAUSE_PARAM, "Automated build based on SCM changes");
         WebhookClient client = new HttpAuthClient();
         client.post(buildUrl, parameters);
     }
