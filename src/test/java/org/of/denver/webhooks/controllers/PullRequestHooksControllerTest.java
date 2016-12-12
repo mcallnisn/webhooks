@@ -12,6 +12,6 @@ public class PullRequestHooksControllerTest {
     @Test
     public void test() throws Exception{
 
-    }git
+    }
 
 }
